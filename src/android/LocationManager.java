@@ -21,6 +21,7 @@ package com.unarin.cordova.beacon;
 import android.Manifest;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.AdvertiseCallback;
@@ -31,11 +32,12 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.os.RemoteException;
-import android.util.Log;
+import android.view.Window;
 
 import org.altbeacon.beacon.Beacon;
 import org.altbeacon.beacon.BeaconConsumer;
@@ -50,9 +52,8 @@ import org.altbeacon.beacon.Region;
 import org.altbeacon.beacon.service.RangedBeacon;
 import org.altbeacon.beacon.service.RunningAverageRssiFilter;
 import org.apache.cordova.CallbackContext;
-import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
-import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.LOG;
 import org.apache.cordova.PermissionHelper;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
@@ -60,9 +61,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.security.InvalidKeyException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -95,6 +98,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private BroadcastReceiver broadcastReceiver;
     private BluetoothAdapter bluetoothAdapter;
 
+    AlertDialog featureDescriptionDialog = null;
 
     /**
      * Constructor.
@@ -117,7 +121,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 		final int foregroundScanPeriod = this.preferences.getInteger(
 				FOREGROUND_SCAN_PERIOD_NAME, DEFAULT_FOREGROUND_SCAN_PERIOD);
 
-		Log.i(TAG, "Determined config value FOREGROUND_SCAN_PERIOD: " +
+		LOG.i(TAG, "Determined config value FOREGROUND_SCAN_PERIOD: " +
 				String.valueOf(foregroundScanPeriod));
 
 		iBeaconManager = BeaconManager.getInstanceForApplication(cordovaActivity);
@@ -127,7 +131,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 		final int sampleExpirationMilliseconds = this.preferences.getInteger(
 				SAMPLE_EXPIRATION_MILLISECOND, DEFAULT_SAMPLE_EXPIRATION_MILLISECOND);
 
-		Log.i(TAG, "Determined config value SAMPLE_EXPIRATION_MILLISECOND: " +
+        LOG.i(TAG, "Determined config value SAMPLE_EXPIRATION_MILLISECOND: " +
 				String.valueOf(sampleExpirationMilliseconds));
 
 		iBeaconManager.setRssiFilterImplClass(RunningAverageRssiFilter.class);
@@ -189,7 +193,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      */
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
         if(!permissionRequestCodeMap.containsKey(action)) {
-            Log.w(TAG, "Got not existing action \"" + action + "\"");
+            LOG.w(TAG, "Got not existing action \"" + action + "\"");
             return false;
         }
         //These actions do NOT require any dangerous permissions
@@ -234,13 +238,9 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         } else if (action.equals("isRangingAvailable")) {
             isRangingAvailable(callbackContext);
         }
-		//These actions require dangerous permissions
-        else if (!PermissionHelper.hasPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)) {
-            mArgs = args;
-            mCallbackContext = callbackContext;
-            PermissionHelper.requestPermission(this,
-                    permissionRequestCodeMap.get(action),
-                    Manifest.permission.ACCESS_COARSE_LOCATION);
+        //These actions require dangerous permissions
+        else if (!checkPermissions(callbackContext, permissionRequestCodeMap.get(action))) {
+            LOG.w(TAG, "permissions required");
         } else if (action.equals("startMonitoringForRegion")) {
             startMonitoringForRegion(args.optJSONObject(0), callbackContext);
         } else if (action.equals("startRangingBeaconsInRegion")) {
@@ -447,7 +447,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                             callbackContext.sendPluginResult(result);
 
                         } catch (Exception e) {
-                            Log.e(TAG, "'monitoringDidFailForRegion' exception " + e.getCause());
+                            LOG.e(TAG, "'monitoringDidFailForRegion' exception " + e.getCause());
                             beaconServiceNotifier.monitoringDidFailForRegion(region, e);
 
                         }
@@ -485,7 +485,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                             callbackContext.sendPluginResult(result);
 
                         } catch (Exception e) {
-                            Log.e(TAG, "'rangingBeaconsDidFailForRegion' exception " + e.getCause());
+                            LOG.e(TAG, "'rangingBeaconsDidFailForRegion' exception " + e.getCause());
                             beaconServiceNotifier.rangingBeaconsDidFailForRegion(region, e);
                         }
                     }
@@ -537,7 +537,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                             callbackContext.sendPluginResult(result);
 
                         } catch (Exception e) {
-                            Log.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
+                            LOG.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
                             monitoringDidFailForRegion(region, e);
                         }
                     }
@@ -579,7 +579,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     callbackContext.sendPluginResult(result);
                 } catch (Exception e) {
                     //still failing, so kill all further event dispatch
-                    Log.e(TAG, eventType + " error " + e.getMessage());
+                    LOG.e(TAG, eventType + " error " + e.getMessage());
                     callbackContext.error(eventType + " error " + e.getMessage());
                 }
             }
@@ -646,7 +646,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     result.setKeepCallback(true);
                     return result;
                 } catch (Exception e) {
-                    Log.e(TAG, "'enableBluetooth' service error: " + e.getCause());
+                    LOG.e(TAG, "'enableBluetooth' service error: " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
             }
@@ -665,7 +665,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     result.setKeepCallback(true);
                     return result;
                 } catch (Exception e) {
-                    Log.e(TAG, "'disableBluetooth' service error: " + e.getCause());
+                    LOG.e(TAG, "'disableBluetooth' service error: " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
             }
@@ -761,11 +761,11 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     return result;
 
                 } catch (RemoteException e) {
-                    Log.e(TAG, "'startMonitoringForRegion' service error: " + e.getCause());
+                    LOG.e(TAG, "'startMonitoringForRegion' service error: " + e.getCause());
                     beaconServiceNotifier.monitoringDidFailForRegion(region, e);
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 } catch (Exception e) {
-                    Log.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
+                    LOG.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
                     beaconServiceNotifier.monitoringDidFailForRegion(region, e);
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
@@ -791,10 +791,10 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     return result;
 
                 } catch (RemoteException e) {
-                    Log.e(TAG, "'stopMonitoringForRegion' service error: " + e.getCause());
+                    LOG.e(TAG, "'stopMonitoringForRegion' service error: " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 } catch (Exception e) {
-                    Log.e(TAG, "'stopMonitoringForRegion' exception " + e.getCause());
+                    LOG.e(TAG, "'stopMonitoringForRegion' exception " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
 
@@ -819,10 +819,10 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     return result;
 
                 } catch (RemoteException e) {
-                    Log.e(TAG, "'startRangingBeaconsInRegion' service error: " + e.getCause());
+                    LOG.e(TAG, "'startRangingBeaconsInRegion' service error: " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 } catch (Exception e) {
-                    Log.e(TAG, "'startRangingBeaconsInRegion' exception " + e.getCause());
+                    LOG.e(TAG, "'startRangingBeaconsInRegion' exception " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
             }
@@ -844,10 +844,10 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     return result;
 
                 } catch (RemoteException e) {
-                    Log.e(TAG, "'stopRangingBeaconsInRegion' service error: " + e.getCause());
+                    LOG.e(TAG, "'stopRangingBeaconsInRegion' service error: " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 } catch (Exception e) {
-                    Log.e(TAG, "'stopRangingBeaconsInRegion' exception " + e.getCause());
+                    LOG.e(TAG, "'stopRangingBeaconsInRegion' exception " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
             }
@@ -1373,10 +1373,10 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void _handleExceptionOfCommand(CallbackContext callbackContext, Exception exception) {
 
-        Log.e(TAG, "Uncaught exception: " + exception.getMessage());
+        LOG.e(TAG, "Uncaught exception: " + exception.getMessage());
         final StackTraceElement[] stackTrace = exception.getStackTrace();
         final String stackTraceElementsAsString = Arrays.toString(stackTrace);
-        Log.e(TAG, "Stack trace: " + stackTraceElementsAsString);
+        LOG.e(TAG, "Stack trace: " + stackTraceElementsAsString);
 
         // When calling without a callback from the client side the command can be null.
         if (callbackContext == null) {
@@ -1402,18 +1402,18 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void debugInfo(String message) {
         if (debugEnabled) {
-            Log.i(TAG, message);
+            LOG.i(TAG, message);
         }
     }
     private void debugLog(String message) {
         if (debugEnabled) {
-            Log.d(TAG, message);
+            LOG.d(TAG, message);
         }
     }
 
     private void debugWarn(String message) {
         if (debugEnabled) {
-            Log.w(TAG, message);
+            LOG.w(TAG, message);
         }
     }
 
@@ -1447,11 +1447,24 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             for (int i = 0; i < grantResults.length; ++i) {
                 int grant = grantResults[i];
                 String permission = permissions[i];
-                if (grant == PackageManager.PERMISSION_DENIED
-                        && permission.equalsIgnoreCase(Manifest.permission.ACCESS_COARSE_LOCATION)) {
-                    mCallbackContext.error("Permission ACCESS_COARSE_LOCATION required");
-                    return;
+                for(String requiredPermission : getRequiredPermissions()){
+                    if (grant == PackageManager.PERMISSION_DENIED
+                            && permission.equalsIgnoreCase(requiredPermission)) {
+                        requestPermissionsWithFeatureDescription(mCallbackContext, requestCode);
+
+                        //requires API 23
+                        /*
+                        if(cordova.getActivity().shouldShowRequestPermissionRationale(permission)){
+
+                            } else {
+                            mCallbackContext.error("Permission ACCESS_COARSE_LOCATION required");
+                        }*/
+
+                        return;
+                    }
                 }
+
+
             }
 
             try {
@@ -1462,7 +1475,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                 mArgs = null;
                 mCallbackContext = null;
             } catch (Exception e) {
-                Log.e(TAG, e.getMessage(), e);
+                LOG.e(TAG, e.getMessage(), e);
                 mCallbackContext.error(e.getMessage());
             }
         } else {
@@ -1479,4 +1492,89 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
         return null;
     }
+
+    private boolean checkPermissions(CallbackContext callbackContext, int requestCode) {
+        if (getRequiredPermissions().length > 0) {
+            mCallbackContext = callbackContext;
+            requestPermissions(requestCode);
+            return false;
+        }
+        return true;
+    }
+
+    private String[] getRequiredPermissions(){
+        List<String> permissions = new ArrayList<>();
+        if(Build.VERSION.SDK_INT >= 29) {
+            if(!PermissionHelper.hasPermission(this, Manifest.permission.ACCESS_FINE_LOCATION))
+                permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            if(!PermissionHelper.hasPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+                permissions.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+        } else {
+            if(!PermissionHelper.hasPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION))
+                permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        }
+        return permissions.toArray(new String[0]);
+    }
+
+    @Override
+    public void requestPermissions(int requestCode) {
+        PermissionHelper.requestPermissions(this, requestCode, getRequiredPermissions());
+    }
+
+    private void requestPermissionsWithFeatureDescription(CallbackContext callbackContext, int requestCode) {
+        featureDescriptionDialog = new AlertDialog.Builder(cordova.getContext())
+                .setMessage(localize(
+                        cordova.getContext(),
+                        "location_usage_description"
+                ))
+                .setPositiveButton(cordova.getContext().getResources().getText(android.R.string.ok),
+                        (dialog, which) -> {
+                            featureDescriptionDialog.setOnDismissListener(null);
+                            dialog.dismiss();
+
+                            mCallbackContext = callbackContext;
+                            requestPermissions(requestCode);
+                        })
+                .setOnDismissListener(dialog -> {
+                    //dialog got dismissed/back pressed
+                    PluginResult result;
+                    if(callbackContext != null) {
+                        LOG.d(TAG, "Permission Denied!");
+                        result = new PluginResult(PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION);
+                        callbackContext.sendPluginResult(result);
+                    }
+                })
+                .create();
+        featureDescriptionDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        featureDescriptionDialog.show();
+    }
+
+    /**
+     * @param filename     Name of the file
+     * @param resourceType Type of resource (ID, STRING, LAYOUT, DRAWABLE)
+     * @return The associated resource identifier. Returns 0 if no such resource was found. (0 is not a valid resource ID.)
+     */
+    private int getResourceId(Context context, String filename, String resourceType) {
+        String package_name = context.getPackageName();
+        Resources resources = context.getResources();
+
+        return resources.getIdentifier(filename, resourceType, package_name);
+    }
+
+    /**
+     * @param identifier string identifier of the resource
+     * @return The localized string. Returns identifier if no such resource was found.
+     */
+    public String localize(Context context, String identifier, Object... args) {
+        int id = getResourceId(context, identifier, "string");
+
+        if (id == 0) {
+            return identifier;
+        } else {
+            return args.length > 0
+                    ? String.format(context.getResources().getString(id), args)
+                    : context.getResources().getString(id);
+        }
+    }
+
 }

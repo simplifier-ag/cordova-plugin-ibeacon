@@ -86,6 +86,8 @@
     </platform>
 
     <platform name="android">
+        <preference name="LOCATION_USAGE_DESCRIPTION" default="This app needs access to the location services to scan for bluetooth devices."/>
+
         <config-file target="res/xml/config.xml" parent="/*">
             <feature name="LocationManager" >
                 <param name="android-package" value="com.unarin.cordova.beacon.LocationManager"/>
@@ -94,6 +96,14 @@
 
         <config-file target="AndroidManifest.xml" parent="/manifest">
 			<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+        </config-file>
+        
+        <config-file target="AndroidManifest.xml" parent="/manifest">
+            <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+            <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+            <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+            <uses-permission android:name="android.permission.BLUETOOTH"/>
+            <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
         </config-file>
 
         <source-file src="src/android/LocationManager.java" target-dir="src/com/unarin/cordova/beacon" />
