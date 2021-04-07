@@ -239,7 +239,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             isRangingAvailable(callbackContext);
         }
         //These actions require dangerous permissions
-        else if (!checkPermissions(callbackContext, permissionRequestCodeMap.get(action))) {
+        else if (!checkPermissions(callbackContext, args, permissionRequestCodeMap.get(action))) {
             LOG.w(TAG, "permissions required");
         } else if (action.equals("startMonitoringForRegion")) {
             startMonitoringForRegion(args.optJSONObject(0), callbackContext);
@@ -1450,21 +1450,16 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                 for(String requiredPermission : getRequiredPermissions()){
                     if (grant == PackageManager.PERMISSION_DENIED
                             && permission.equalsIgnoreCase(requiredPermission)) {
-                        requestPermissionsWithFeatureDescription(mCallbackContext, requestCode);
 
-                        //requires API 23
-                        /*
-                        if(cordova.getActivity().shouldShowRequestPermissionRationale(permission)){
-
-                            } else {
-                            mCallbackContext.error("Permission ACCESS_COARSE_LOCATION required");
-                        }*/
-
+                        LOG.e(TAG, "Permission Denied!");
+                        PluginResult result = new PluginResult(
+                                PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION,
+                                String.format("Permission(s) %s Denied!", requiredPermission)
+                        );
+                        mCallbackContext.sendPluginResult(result);
                         return;
                     }
                 }
-
-
             }
 
             try {
@@ -1493,10 +1488,47 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         return null;
     }
 
-    private boolean checkPermissions(CallbackContext callbackContext, int requestCode) {
+    private boolean checkPermissions(CallbackContext callbackContext, JSONArray args, int requestCode) {
         if (getRequiredPermissions().length > 0) {
-            mCallbackContext = callbackContext;
-            requestPermissions(requestCode);
+            //as our app was rejected from the store, even when aligning with
+            //https://developer.android.com/training/permissions/requesting#explain, a feature
+            //description is now forced before permissions are requested
+
+/*            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && cordova.getActivity().shouldShowRequestPermissionRationale(permission)) {
+                requestPermissionsWithFeatureDescription(callbackContext, args, requestCode);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !cordova.getActivity().shouldShowRequestPermissionRationale(permission)) {
+                callbackContext.error(String.format("Permission(s) %s required", Arrays.toString(getRequiredPermissions())));
+            } else {
+                requestPermissionsWithFeatureDescription(callbackContext, args, requestCode);
+            }*/
+
+            featureDescriptionDialog = new AlertDialog.Builder(cordova.getContext())
+                    .setMessage(localize(
+                            cordova.getContext(),
+                            "location_usage_description"
+                    ))
+                    .setPositiveButton(cordova.getContext().getResources().getText(android.R.string.ok),
+                            (dialog, which) -> {
+                                featureDescriptionDialog.setOnDismissListener(null);
+                                dialog.dismiss();
+
+                                mCallbackContext = callbackContext;
+                                mArgs = args;
+                                requestPermissions(requestCode);
+                            })
+                    .setOnDismissListener(dialog -> {
+                        //dialog got dismissed/back pressed
+                        PluginResult result;
+                        if(callbackContext != null) {
+                            LOG.e(TAG, "Permission Denied!");
+                            result = new PluginResult(PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION, "Permission Denied!");
+                            callbackContext.sendPluginResult(result);
+                        }
+                    })
+                    .create();
+            featureDescriptionDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            featureDescriptionDialog.show();
+
             return false;
         }
         return true;
@@ -1504,6 +1536,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private String[] getRequiredPermissions(){
         List<String> permissions = new ArrayList<>();
+
         if(Build.VERSION.SDK_INT >= 29) {
             if(!PermissionHelper.hasPermission(this, Manifest.permission.ACCESS_FINE_LOCATION))
                 permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
@@ -1519,34 +1552,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     @Override
     public void requestPermissions(int requestCode) {
         PermissionHelper.requestPermissions(this, requestCode, getRequiredPermissions());
-    }
-
-    private void requestPermissionsWithFeatureDescription(CallbackContext callbackContext, int requestCode) {
-        featureDescriptionDialog = new AlertDialog.Builder(cordova.getContext())
-                .setMessage(localize(
-                        cordova.getContext(),
-                        "location_usage_description"
-                ))
-                .setPositiveButton(cordova.getContext().getResources().getText(android.R.string.ok),
-                        (dialog, which) -> {
-                            featureDescriptionDialog.setOnDismissListener(null);
-                            dialog.dismiss();
-
-                            mCallbackContext = callbackContext;
-                            requestPermissions(requestCode);
-                        })
-                .setOnDismissListener(dialog -> {
-                    //dialog got dismissed/back pressed
-                    PluginResult result;
-                    if(callbackContext != null) {
-                        LOG.d(TAG, "Permission Denied!");
-                        result = new PluginResult(PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION);
-                        callbackContext.sendPluginResult(result);
-                    }
-                })
-                .create();
-        featureDescriptionDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        featureDescriptionDialog.show();
     }
 
     /**
