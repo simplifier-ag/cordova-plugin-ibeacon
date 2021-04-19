@@ -37,7 +37,6 @@ import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.os.RemoteException;
-import android.support.v4.app.ActivityCompat;
 import android.view.Window;
 
 import org.altbeacon.beacon.Beacon;
@@ -52,7 +51,6 @@ import org.altbeacon.beacon.RangeNotifier;
 import org.altbeacon.beacon.Region;
 import org.altbeacon.beacon.service.RangedBeacon;
 import org.altbeacon.beacon.service.RunningAverageRssiFilter;
-import org.apache.cordova.BuildConfig;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.LOG;
@@ -1454,8 +1452,8 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                                     String.format("permissions %s required", Arrays.asList(getRequiredPermissions()))
                             )
                     );
+                    return;
                 }
-                return;
             }
 
             try {
