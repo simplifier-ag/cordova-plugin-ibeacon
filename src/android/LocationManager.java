@@ -37,6 +37,7 @@ import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.os.RemoteException;
+import android.support.v4.app.ActivityCompat;
 import android.view.Window;
 
 import org.altbeacon.beacon.Beacon;
@@ -51,6 +52,7 @@ import org.altbeacon.beacon.RangeNotifier;
 import org.altbeacon.beacon.Region;
 import org.altbeacon.beacon.service.RangedBeacon;
 import org.altbeacon.beacon.service.RunningAverageRssiFilter;
+import org.apache.cordova.BuildConfig;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.LOG;
@@ -98,7 +100,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private BroadcastReceiver broadcastReceiver;
     private BluetoothAdapter bluetoothAdapter;
 
-    AlertDialog featureDescriptionDialog = null;
 
     /**
      * Constructor.
@@ -1444,22 +1445,17 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     @Override
     public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
         if (permissionRequestCodeMap.containsValue(requestCode) && grantResults.length > 0) {
-            for (int i = 0; i < grantResults.length; ++i) {
-                int grant = grantResults[i];
-                String permission = permissions[i];
-                for(String requiredPermission : getRequiredPermissions()){
-                    if (grant == PackageManager.PERMISSION_DENIED
-                            && permission.equalsIgnoreCase(requiredPermission)) {
-
-                        LOG.e(TAG, "Permission Denied!");
-                        PluginResult result = new PluginResult(
-                                PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION,
-                                String.format("Permission(s) %s Denied!", requiredPermission)
-                        );
-                        mCallbackContext.sendPluginResult(result);
-                        return;
-                    }
+            //result in error if any permission was denied
+            for (int grant : grantResults ) {
+                if(grant == PackageManager.PERMISSION_DENIED) {
+                    mCallbackContext.sendPluginResult(
+                            new PluginResult(
+                                    PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION,
+                                    String.format("permissions %s required", Arrays.asList(getRequiredPermissions()))
+                            )
+                    );
                 }
+                return;
             }
 
             try {
@@ -1490,45 +1486,9 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private boolean checkPermissions(CallbackContext callbackContext, JSONArray args, int requestCode) {
         if (getRequiredPermissions().length > 0) {
-            //as our app was rejected from the store, even when aligning with
-            //https://developer.android.com/training/permissions/requesting#explain, a feature
-            //description is now forced before permissions are requested
-
-/*            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && cordova.getActivity().shouldShowRequestPermissionRationale(permission)) {
-                requestPermissionsWithFeatureDescription(callbackContext, args, requestCode);
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !cordova.getActivity().shouldShowRequestPermissionRationale(permission)) {
-                callbackContext.error(String.format("Permission(s) %s required", Arrays.toString(getRequiredPermissions())));
-            } else {
-                requestPermissionsWithFeatureDescription(callbackContext, args, requestCode);
-            }*/
-
-            featureDescriptionDialog = new AlertDialog.Builder(cordova.getContext())
-                    .setMessage(localize(
-                            cordova.getContext(),
-                            "location_usage_description"
-                    ))
-                    .setPositiveButton(cordova.getContext().getResources().getText(android.R.string.ok),
-                            (dialog, which) -> {
-                                featureDescriptionDialog.setOnDismissListener(null);
-                                dialog.dismiss();
-
-                                mCallbackContext = callbackContext;
-                                mArgs = args;
-                                requestPermissions(requestCode);
-                            })
-                    .setOnDismissListener(dialog -> {
-                        //dialog got dismissed/back pressed
-                        PluginResult result;
-                        if(callbackContext != null) {
-                            LOG.e(TAG, "Permission Denied!");
-                            result = new PluginResult(PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION, "Permission Denied!");
-                            callbackContext.sendPluginResult(result);
-                        }
-                    })
-                    .create();
-            featureDescriptionDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-            featureDescriptionDialog.show();
-
+            mCallbackContext = callbackContext;
+            mArgs = args;
+            requestPermissions(requestCode);
             return false;
         }
         return true;
@@ -1536,7 +1496,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private String[] getRequiredPermissions(){
         List<String> permissions = new ArrayList<>();
-
         if(Build.VERSION.SDK_INT >= 29) {
             if(!PermissionHelper.hasPermission(this, Manifest.permission.ACCESS_FINE_LOCATION))
                 permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
@@ -1551,8 +1510,51 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     @Override
     public void requestPermissions(int requestCode) {
-        PermissionHelper.requestPermissions(this, requestCode, getRequiredPermissions());
+
+        AlertDialog.Builder dialogBuilder;
+
+        //TODO: apply when target >= 31
+        // background permission needs to be requested separately on android API > 30 (Android 11)
+        // https://developer.android.com/about/versions/11/privacy/location#request-background-location-separately
+        // user needs to be navigated to app settings
+        /*
+        List<String> permissions = Arrays.asList(getRequiredPermissions());
+        if (permissions.contains(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            dialogBuilder = new AlertDialog.Builder(cordova.getContext())
+                    .setMessage(localize(
+                            cordova.getContext(),
+                            "location_background_usage_description"
+                    ))
+
+                    .setOnDismissListener(dialog -> {
+                        dialog.dismiss();
+
+                        PermissionHelper.requestPermission(this, requestCode, Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+                    });
+        } else {
+
+        }*/
+        dialogBuilder = new AlertDialog.Builder(cordova.getContext())
+                .setMessage(localize(
+                        cordova.getContext(),
+                        Build.VERSION.SDK_INT > Build.VERSION_CODES.Q ?
+                                "location_usage_description_api30" : "location_usage_description"
+                ))
+
+                .setOnDismissListener(dialog -> {
+                    dialog.dismiss();
+                    PermissionHelper.requestPermissions(this, requestCode, getRequiredPermissions());
+                });
+        dialogBuilder.setPositiveButton(cordova.getContext().getResources().getText(android.R.string.ok),
+                (dialog, which) -> {
+                });
+
+        AlertDialog featureDescriptionDialog = dialogBuilder.create();
+        featureDescriptionDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        featureDescriptionDialog.show();
     }
+
 
     /**
      * @param filename     Name of the file

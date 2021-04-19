@@ -87,11 +87,17 @@
 
     <platform name="android">
         <preference name="LOCATION_USAGE_DESCRIPTION" default="This app needs access to the location services to scan for bluetooth devices."/>
+        <preference name="API30_LOCATION_USAGE_DESCRIPTION" default="This app needs access to the location services to scan for bluetooth devices even when the app is closed or not in use.\n\nPlease press \nAllow in Settings\nto ensure background functionality."/>
 
         <config-file target="res/xml/config.xml" parent="/*">
             <feature name="LocationManager" >
                 <param name="android-package" value="com.unarin.cordova.beacon.LocationManager"/>
             </feature>
+        </config-file>
+
+         <config-file target="./res/xml/strings.xml" parent="/resources">
+            <string name="location_usage_description">$LOCATION_USAGE_DESCRIPTION</string>
+            <string name="api30_location_usage_description">$API30_LOCATION_USAGE_DESCRIPTION</string>
         </config-file>
 
         <config-file target="AndroidManifest.xml" parent="/manifest">
