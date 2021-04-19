@@ -1537,7 +1537,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                 .setMessage(localize(
                         cordova.getContext(),
                         Build.VERSION.SDK_INT > Build.VERSION_CODES.Q ?
-                                "location_usage_description_api30" : "location_usage_description"
+                                "api30_beacon_location_usage_description" : "beacon_location_usage_description"
                 ))
 
                 .setOnDismissListener(dialog -> {
