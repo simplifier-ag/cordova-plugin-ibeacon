@@ -19,7 +19,7 @@
 package com.unarin.cordova.beacon;
 
 import android.Manifest;
-import android.annotation.TargetApi;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
@@ -30,24 +30,19 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
-import android.os.RemoteException;
 import android.view.Window;
 
 import org.altbeacon.beacon.Beacon;
-import org.altbeacon.beacon.BeaconConsumer;
 import org.altbeacon.beacon.BeaconManager;
 import org.altbeacon.beacon.BeaconParser;
 import org.altbeacon.beacon.BeaconTransmitter;
 import org.altbeacon.beacon.BleNotAvailableException;
 import org.altbeacon.beacon.Identifier;
 import org.altbeacon.beacon.MonitorNotifier;
-import org.altbeacon.beacon.RangeNotifier;
 import org.altbeacon.beacon.Region;
 import org.altbeacon.beacon.service.RangedBeacon;
 import org.altbeacon.beacon.service.RunningAverageRssiFilter;
@@ -64,14 +59,14 @@ import java.security.InvalidKeyException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
-@TargetApi(Build.VERSION_CODES.JELLY_BEAN)
-public class LocationManager extends CordovaPlugin implements BeaconConsumer {
+public class LocationManager extends CordovaPlugin {
 
     public static final String TAG = "com.unarin.beacon";
     private static final String FOREGROUND_BETWEEN_SCAN_PERIOD_NAME = "com.unarin.cordova.beacon.android.altbeacon.ForegroundBetweenScanPeriod";
@@ -80,9 +75,9 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private static final String SAMPLE_EXPIRATION_MILLISECOND = "com.unarin.cordova.beacon.android.altbeacon.SampleExpirationMilliseconds";
     private static final int DEFAULT_SAMPLE_EXPIRATION_MILLISECOND = 20000;
     private static final int DEFAULT_FOREGROUND_SCAN_PERIOD = 1100;
-    private static int CDV_LOCATION_MANAGER_DOM_DELEGATE_TIMEOUT = 30;
+    private static final int CDV_LOCATION_MANAGER_DOM_DELEGATE_TIMEOUT = 30;
 
-    private HashMap<String, Integer> permissionRequestCodeMap = new HashMap<String, Integer>();
+    private final HashMap<String, Integer> permissionRequestCodeMap = new HashMap<>();
     private CallbackContext mCallbackContext = null;
     private JSONArray mArgs = null;
 
@@ -105,76 +100,76 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     public LocationManager() {
     }
 
-	/**
-	 * Called after plugin construction and fields have been initialized.
-	 */
-	@Override
-	protected void pluginInitialize() {
-		super.pluginInitialize();
+    /**
+     * Called after plugin construction and fields have been initialized.
+     */
+    @Override
+    protected void pluginInitialize() {
+        super.pluginInitialize();
 
-		final Activity cordovaActivity = cordova.getActivity();
+        final Activity cordovaActivity = cordova.getActivity();
 
-		final int foregroundBetweenScanPeriod = this.preferences.getInteger(
-				FOREGROUND_BETWEEN_SCAN_PERIOD_NAME, DEFAULT_FOREGROUND_BETWEEN_SCAN_PERIOD);
+        final int foregroundBetweenScanPeriod = this.preferences.getInteger(
+                FOREGROUND_BETWEEN_SCAN_PERIOD_NAME, DEFAULT_FOREGROUND_BETWEEN_SCAN_PERIOD);
 
-		final int foregroundScanPeriod = this.preferences.getInteger(
-				FOREGROUND_SCAN_PERIOD_NAME, DEFAULT_FOREGROUND_SCAN_PERIOD);
+        final int foregroundScanPeriod = this.preferences.getInteger(
+                FOREGROUND_SCAN_PERIOD_NAME, DEFAULT_FOREGROUND_SCAN_PERIOD);
 
-		LOG.i(TAG, "Determined config value FOREGROUND_SCAN_PERIOD: " +
-				String.valueOf(foregroundScanPeriod));
+        LOG.i(TAG, "Determined config value FOREGROUND_SCAN_PERIOD: " +
+                foregroundScanPeriod);
 
-		iBeaconManager = BeaconManager.getInstanceForApplication(cordovaActivity);
-		iBeaconManager.setForegroundBetweenScanPeriod(foregroundBetweenScanPeriod);
-		iBeaconManager.setForegroundScanPeriod(foregroundScanPeriod);
+        iBeaconManager = BeaconManager.getInstanceForApplication(cordovaActivity);
+        iBeaconManager.setForegroundBetweenScanPeriod(foregroundBetweenScanPeriod);
+        iBeaconManager.setForegroundScanPeriod(foregroundScanPeriod);
 
-		final int sampleExpirationMilliseconds = this.preferences.getInteger(
-				SAMPLE_EXPIRATION_MILLISECOND, DEFAULT_SAMPLE_EXPIRATION_MILLISECOND);
+        final int sampleExpirationMilliseconds = this.preferences.getInteger(
+                SAMPLE_EXPIRATION_MILLISECOND, DEFAULT_SAMPLE_EXPIRATION_MILLISECOND);
 
         LOG.i(TAG, "Determined config value SAMPLE_EXPIRATION_MILLISECOND: " +
-				String.valueOf(sampleExpirationMilliseconds));
+                sampleExpirationMilliseconds);
 
-		iBeaconManager.setRssiFilterImplClass(RunningAverageRssiFilter.class);
-		RunningAverageRssiFilter.setSampleExpirationMilliseconds(sampleExpirationMilliseconds);
-		RangedBeacon.setSampleExpirationMilliseconds(sampleExpirationMilliseconds);
+        BeaconManager.setRssiFilterImplClass(RunningAverageRssiFilter.class);
+        RunningAverageRssiFilter.setSampleExpirationMilliseconds(sampleExpirationMilliseconds);
+        RangedBeacon.setSampleExpirationMilliseconds(sampleExpirationMilliseconds);
 
-		initBluetoothListener();
-		initEventQueue();
-		pauseEventPropagationToDom(); // Before the DOM is loaded we'll just keep collecting the events and fire them later.
+        initBluetoothListener();
+        initEventQueue();
+        pauseEventPropagationToDom(); // Before the DOM is loaded we'll just keep collecting the events and fire them later.
 
-		initLocationManager();
+        initLocationManager();
 
-		debugEnabled = true;
+        debugEnabled = true;
 
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-			initBluetoothAdapter();
-		}
-		//TODO AddObserver when page loaded
+        initBluetoothAdapter();
+        //TODO AddObserver when page loaded
 
-		String[] actions = {
-				"onDomDelegateReady","disableDebugNotifications","enableDebugNotifications","disableDebugLogs","enableDebugLogs",
-				"appendToDeviceLog","startMonitoringForRegion","startRangingBeaconsInRegion","stopRangingBeaconsInRegion",
-				"isRangingAvailable","getAuthorizationStatus","requestWhenInUseAuthorization","requestAlwaysAuthorization",
-				"getMonitoredRegions","getRangedRegions","requestStateForRegion","registerDelegateCallbackId",
-				"isMonitoringAvailableForClass","isAdvertisingAvailable","isAdvertising","startAdvertising","stopAdvertising",
-				"isBluetoothEnabled","enableBluetooth","disableBluetooth", "stopMonitoringForRegion"
-		};
+        String[] actions = {
+                "onDomDelegateReady", "disableDebugNotifications", "enableDebugNotifications", "disableDebugLogs", "enableDebugLogs",
+                "appendToDeviceLog", "startMonitoringForRegion", "startRangingBeaconsInRegion", "stopRangingBeaconsInRegion",
+                "isRangingAvailable", "getAuthorizationStatus", "requestWhenInUseAuthorization", "requestAlwaysAuthorization",
+                "getMonitoredRegions", "getRangedRegions", "requestStateForRegion", "registerDelegateCallbackId",
+                "isMonitoringAvailableForClass", "isAdvertisingAvailable", "isAdvertising", "startAdvertising", "stopAdvertising",
+                "isBluetoothEnabled", "enableBluetooth", "disableBluetooth", "stopMonitoringForRegion"
+        };
 
-		for (int i = 0; i < actions.length; i++) {
-			permissionRequestCodeMap.put(actions[i], 7540 + i);
-		}
-	}
+        for (int i = 0; i < actions.length; i++) {
+            permissionRequestCodeMap.put(actions[i], 7540 + i);
+        }
+    }
 
-	/**
+    /**
      * The final call you receive before your activity is destroyed.
      */
     @Override
     public void onDestroy() {
-        iBeaconManager.unbind(this);
+        mCallbackContext = null;
 
         if (broadcastReceiver != null) {
             cordova.getActivity().unregisterReceiver(broadcastReceiver);
             broadcastReceiver = null;
         }
+        iBeaconManager.removeAllMonitorNotifiers();
+        iBeaconManager.removeAllRangeNotifiers();
 
         super.onDestroy();
     }
@@ -191,7 +186,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      * @return True if the action was valid, false if not.
      */
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
-        if(!permissionRequestCodeMap.containsKey(action)) {
+        if (!permissionRequestCodeMap.containsKey(action)) {
             LOG.w(TAG, "Got not existing action \"" + action + "\"");
             return false;
         }
@@ -261,20 +256,20 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void initLocationManager() {
         iBeaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"));
-        iBeaconManager.bind(this);
+
+        debugLog("Connected to IBeacon service");
     }
 
     private BeaconTransmitter createOrGetBeaconTransmitter() {
         if (this.beaconTransmitter == null) {
             final BeaconParser beaconParser = new BeaconParser()
-                .setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24");
+                    .setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24");
 
-            this.beaconTransmitter = new BeaconTransmitter(getApplicationContext(), beaconParser);
+            this.beaconTransmitter = new BeaconTransmitter(cordova.getContext().getApplicationContext(), beaconParser);
         }
         return this.beaconTransmitter;
     }
 
-    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
     private void initBluetoothAdapter() {
         Activity activity = cordova.getActivity();
         BluetoothManager bluetoothManager = (BluetoothManager) activity.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -375,12 +370,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         threadPoolExecutor = new PausableThreadPoolExecutor(queue);
 
         //Add a timeout check
-        new Handler().postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                checkIfDomSignaldDelegateReady();
-            }
-        }, CDV_LOCATION_MANAGER_DOM_DELEGATE_TIMEOUT * 1000);
+        new Handler().postDelayed(this::checkIfDomSignaldDelegateReady, CDV_LOCATION_MANAGER_DOM_DELEGATE_TIMEOUT * 1000);
     }
 
     private void checkEventQueue() {
@@ -388,7 +378,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             return;
 
         debugWarn("WARNING event queue should not be null.");
-        queue = new LinkedBlockingQueue<Runnable>();
+        queue = new LinkedBlockingQueue<>();
         threadPoolExecutor = new PausableThreadPoolExecutor(queue);
     }
 
@@ -407,7 +397,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private void createMonitorCallbacks(final CallbackContext callbackContext) {
 
         //Monitor callbacks
-        iBeaconManager.setMonitorNotifier(new MonitorNotifier() {
+        iBeaconManager.addMonitorNotifier(new MonitorNotifier() {
             @Override
             public void didEnterRegion(Region region) {
                 debugLog("didEnterRegion INSIDE for " + region.getUniqueId());
@@ -429,27 +419,25 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             // Send state to JS callback until told to stop
             private void dispatchMonitorState(final String eventType, final int state, final Region region, final CallbackContext callbackContext) {
 
-                threadPoolExecutor.execute(new Runnable() {
-                    public void run() {
-                        try {
-                            JSONObject data = new JSONObject();
-                            data.put("eventType", eventType);
-                            data.put("region", mapOfRegion(region));
+                threadPoolExecutor.execute(() -> {
+                    try {
+                        JSONObject data = new JSONObject();
+                        data.put("eventType", eventType);
+                        data.put("region", mapOfRegion(region));
 
-                            if (eventType.equals("didDetermineStateForRegion")) {
-                                String stateName = nameOfRegionState(state);
-                                data.put("state", stateName);
-                            }
-                            //send and keep reference to callback
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, data);
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
-
-                        } catch (Exception e) {
-                            LOG.e(TAG, "'monitoringDidFailForRegion' exception " + e.getCause());
-                            beaconServiceNotifier.monitoringDidFailForRegion(region, e);
-
+                        if (eventType.equals("didDetermineStateForRegion")) {
+                            String stateName = nameOfRegionState(state);
+                            data.put("state", stateName);
                         }
+                        //send and keep reference to callback
+                        PluginResult result = new PluginResult(PluginResult.Status.OK, data);
+                        result.setKeepCallback(true);
+                        callbackContext.sendPluginResult(result);
+
+                    } catch (Exception e) {
+                        LOG.e(TAG, "'monitoringDidFailForRegion' exception " + e.getCause());
+                        beaconServiceNotifier.monitoringDidFailForRegion(region, e);
+
                     }
                 });
             }
@@ -459,39 +447,30 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void createRangingCallbacks(final CallbackContext callbackContext) {
 
-        iBeaconManager.setRangeNotifier(new RangeNotifier() {
-            @Override
-            public void didRangeBeaconsInRegion(final Collection<Beacon> iBeacons, final Region region) {
+        iBeaconManager.addRangeNotifier((iBeacons, region) -> threadPoolExecutor.execute(() -> {
 
-                threadPoolExecutor.execute(new Runnable() {
-                    public void run() {
+            try {
+                JSONObject data = new JSONObject();
+                JSONArray beaconData = new JSONArray();
+                for (Beacon beacon : iBeacons) {
+                    beaconData.put(mapOfBeacon(beacon));
+                }
+                data.put("eventType", "didRangeBeaconsInRegion");
+                data.put("region", mapOfRegion(region));
+                data.put("beacons", beaconData);
 
-                        try {
-                            JSONObject data = new JSONObject();
-                            JSONArray beaconData = new JSONArray();
-                            for (Beacon beacon : iBeacons) {
-                                beaconData.put(mapOfBeacon(beacon));
-                            }
-                            data.put("eventType", "didRangeBeaconsInRegion");
-                            data.put("region", mapOfRegion(region));
-                            data.put("beacons", beaconData);
+                debugLog("didRangeBeacons: " + data);
 
-                            debugLog("didRangeBeacons: " + data.toString());
+                //send and keep reference to callback
+                PluginResult result = new PluginResult(PluginResult.Status.OK, data);
+                result.setKeepCallback(true);
+                callbackContext.sendPluginResult(result);
 
-                            //send and keep reference to callback
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, data);
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
-
-                        } catch (Exception e) {
-                            LOG.e(TAG, "'rangingBeaconsDidFailForRegion' exception " + e.getCause());
-                            beaconServiceNotifier.rangingBeaconsDidFailForRegion(region, e);
-                        }
-                    }
-                });
+            } catch (Exception e) {
+                LOG.e(TAG, "'rangingBeaconsDidFailForRegion' exception " + e.getCause());
+                beaconServiceNotifier.rangingBeaconsDidFailForRegion(region, e);
             }
-
-        });
+        }));
 
     }
 
@@ -500,68 +479,54 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
             @Override
             public void rangingBeaconsDidFailForRegion(final Region region, final Exception exception) {
-                threadPoolExecutor.execute(new Runnable() {
-                    public void run() {
-
-                        sendFailEvent("rangingBeaconsDidFailForRegion", region, exception, callbackContext);
-                    }
-                });
+                threadPoolExecutor.execute(() -> sendFailEvent("rangingBeaconsDidFailForRegion", region, exception, callbackContext));
             }
 
             @Override
             public void monitoringDidFailForRegion(final Region region, final Exception exception) {
-                threadPoolExecutor.execute(new Runnable() {
-                    public void run() {
-
-                        sendFailEvent("monitoringDidFailForRegionWithError", region, exception, callbackContext);
-                    }
-                });
+                threadPoolExecutor.execute(() -> sendFailEvent("monitoringDidFailForRegionWithError", region, exception, callbackContext));
             }
 
             @Override
             public void didStartMonitoringForRegion(final Region region) {
-                threadPoolExecutor.execute(new Runnable() {
-                    public void run() {
+                threadPoolExecutor.execute(() -> {
 
-                        try {
-                            JSONObject data = new JSONObject();
-                            data.put("eventType", "didStartMonitoringForRegion");
-                            data.put("region", mapOfRegion(region));
+                    try {
+                        JSONObject data = new JSONObject();
+                        data.put("eventType", "didStartMonitoringForRegion");
+                        data.put("region", mapOfRegion(region));
 
-                            debugLog("didStartMonitoringForRegion: " + data.toString());
+                        debugLog("didStartMonitoringForRegion: " + data);
 
-                            //send and keep reference to callback
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, data);
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
+                        //send and keep reference to callback
+                        PluginResult result = new PluginResult(PluginResult.Status.OK, data);
+                        result.setKeepCallback(true);
+                        callbackContext.sendPluginResult(result);
 
-                        } catch (Exception e) {
-                            LOG.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
-                            monitoringDidFailForRegion(region, e);
-                        }
+                    } catch (Exception e) {
+                        LOG.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
+                        monitoringDidFailForRegion(region, e);
                     }
                 });
             }
 
             @Override
             public void didChangeAuthorizationStatus(final String status) {
-                threadPoolExecutor.execute(new Runnable() {
-                    public void run() {
+                threadPoolExecutor.execute(() -> {
 
-                        try {
-                            JSONObject data = new JSONObject();
-                            data.put("eventType", "didChangeAuthorizationStatus");
-                            data.put("authorizationStatus", status);
-                            debugLog("didChangeAuthorizationStatus: " + data.toString());
+                    try {
+                        JSONObject data = new JSONObject();
+                        data.put("eventType", "didChangeAuthorizationStatus");
+                        data.put("authorizationStatus", status);
+                        debugLog("didChangeAuthorizationStatus: " + data);
 
-                            //send and keep reference to callback
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, data);
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
+                        //send and keep reference to callback
+                        PluginResult result = new PluginResult(PluginResult.Status.OK, data);
+                        result.setKeepCallback(true);
+                        callbackContext.sendPluginResult(result);
 
-                        } catch (Exception e) {
-                            callbackContext.error("didChangeAuthorizationStatus error: " + e.getMessage());
-                        }
+                    } catch (Exception e) {
+                        callbackContext.error("didChangeAuthorizationStatus error: " + e.getMessage());
                     }
                 });
             }
@@ -603,172 +568,129 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      */
     private void onDomDelegateReady(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                resumeEventPropagationToDom();
-                return new PluginResult(PluginResult.Status.OK);
-            }
+        _handleCallSafely(callbackContext, () -> {
+            resumeEventPropagationToDom();
+            return new PluginResult(PluginResult.Status.OK);
         });
     }
 
     private void isBluetoothEnabled(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
+            try {
+                //Check the Bluetooth service is running
+                boolean available = bluetoothAdapter != null && bluetoothAdapter.isEnabled();
+                return new PluginResult(PluginResult.Status.OK, available);
 
-            @Override
-            public PluginResult run() {
-                try {
-                    //Check the Bluetooth service is running
-                    boolean available = bluetoothAdapter != null && bluetoothAdapter.isEnabled();
-                    return new PluginResult(PluginResult.Status.OK, available);
-
-                } catch (Exception e) {
-                    debugWarn("'isBluetoothEnabled' exception " + e.getMessage());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
+            } catch (Exception e) {
+                debugWarn("'isBluetoothEnabled' exception " + e.getMessage());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
     }
 
-
+    //suppressing MissingPermission due to cordova permission check implementation
+    @SuppressLint("MissingPermission")
     private void enableBluetooth(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                try {
-                    bluetoothAdapter.enable();
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    result.setKeepCallback(true);
-                    return result;
-                } catch (Exception e) {
-                    LOG.e(TAG, "'enableBluetooth' service error: " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
+        _handleCallSafely(callbackContext, () -> {
+            try {
+                bluetoothAdapter.enable();
+                PluginResult result = new PluginResult(PluginResult.Status.OK);
+                result.setKeepCallback(true);
+                return result;
+            } catch (Exception e) {
+                LOG.e(TAG, "'enableBluetooth' service error: " + e.getCause());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
     }
 
+    @SuppressLint("MissingPermission")
     private void disableBluetooth(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                try {
-                    bluetoothAdapter.disable();
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    result.setKeepCallback(true);
-                    return result;
-                } catch (Exception e) {
-                    LOG.e(TAG, "'disableBluetooth' service error: " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
+        _handleCallSafely(callbackContext, () -> {
+            try {
+                bluetoothAdapter.disable();
+                PluginResult result = new PluginResult(PluginResult.Status.OK);
+                result.setKeepCallback(true);
+                return result;
+            } catch (Exception e) {
+                LOG.e(TAG, "'disableBluetooth' service error: " + e.getCause());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
     }
 
     private void disableDebugNotifications(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                debugEnabled = false;
-                BeaconManager.setDebug(false);
-                //android.bluetooth.BluetoothAdapter.DBG = false;
-                return new PluginResult(PluginResult.Status.OK);
-            }
+        _handleCallSafely(callbackContext, () -> {
+            debugEnabled = false;
+            BeaconManager.setDebug(false);
+            //android.bluetooth.BluetoothAdapter.DBG = false;
+            return new PluginResult(PluginResult.Status.OK);
         });
     }
 
     private void enableDebugNotifications(CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                debugEnabled = true;
-                //android.bluetooth.BluetoothAdapter.DBG = true;
-                BeaconManager.setDebug(true);
-                return new PluginResult(PluginResult.Status.OK);
-            }
+        _handleCallSafely(callbackContext, () -> {
+            debugEnabled = true;
+            //android.bluetooth.BluetoothAdapter.DBG = true;
+            BeaconManager.setDebug(true);
+            return new PluginResult(PluginResult.Status.OK);
         });
     }
 
 
     private void disableDebugLogs(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                debugEnabled = false;
-                BeaconManager.setDebug(false);
-                //android.bluetooth.BluetoothAdapter.DBG = false;
-                return new PluginResult(PluginResult.Status.OK);
-            }
+        _handleCallSafely(callbackContext, () -> {
+            debugEnabled = false;
+            BeaconManager.setDebug(false);
+            //android.bluetooth.BluetoothAdapter.DBG = false;
+            return new PluginResult(PluginResult.Status.OK);
         });
     }
 
     private void enableDebugLogs(CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                debugEnabled = true;
-                //android.bluetooth.BluetoothAdapter.DBG = true;
-                BeaconManager.setDebug(true);
-                return new PluginResult(PluginResult.Status.OK);
-            }
+        _handleCallSafely(callbackContext, () -> {
+            debugEnabled = true;
+            //android.bluetooth.BluetoothAdapter.DBG = true;
+            BeaconManager.setDebug(true);
+            return new PluginResult(PluginResult.Status.OK);
         });
     }
 
     private void appendToDeviceLog(final String message, CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
 
-            @Override
-            public PluginResult run() {
-
-                if (message != null && !message.isEmpty()) {
-                    debugLog("[DOM] " + message);
-                    return new PluginResult(PluginResult.Status.OK, message);
-                } else {
-                    return new PluginResult(PluginResult.Status.ERROR, "Log message not provided");
-                }
+            if (message != null && !message.isEmpty()) {
+                debugLog("[DOM] " + message);
+                return new PluginResult(PluginResult.Status.OK, message);
+            } else {
+                return new PluginResult(PluginResult.Status.ERROR, "Log message not provided");
             }
         });
     }
 
     private void startMonitoringForRegion(final JSONObject arguments, final CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
 
-            @Override
-            public PluginResult run() {
+            Region region = null;
+            try {
+                region = parseRegion(arguments);
+                iBeaconManager.startMonitoring(region);
 
-                Region region = null;
-                try {
-                    region = parseRegion(arguments);
-                    iBeaconManager.startMonitoringBeaconsInRegion(region);
+                PluginResult result = new PluginResult(PluginResult.Status.OK);
+                result.setKeepCallback(true);
+                beaconServiceNotifier.didStartMonitoringForRegion(region);
+                return result;
 
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    result.setKeepCallback(true);
-                    beaconServiceNotifier.didStartMonitoringForRegion(region);
-                    return result;
-
-                } catch (RemoteException e) {
-                    LOG.e(TAG, "'startMonitoringForRegion' service error: " + e.getCause());
-                    beaconServiceNotifier.monitoringDidFailForRegion(region, e);
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                } catch (Exception e) {
-                    LOG.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
-                    beaconServiceNotifier.monitoringDidFailForRegion(region, e);
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
-
+            } catch (Exception e) {
+                LOG.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
+                beaconServiceNotifier.monitoringDidFailForRegion(region, e);
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
 
         });
@@ -776,79 +698,57 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void stopMonitoringForRegion(final JSONObject arguments, final CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
 
-            @Override
-            public PluginResult run() {
+            try {
+                Region region = parseRegion(arguments);
+                iBeaconManager.stopMonitoring(region);
 
-                try {
-                    Region region = parseRegion(arguments);
-                    iBeaconManager.stopMonitoringBeaconsInRegion(region);
+                PluginResult result = new PluginResult(PluginResult.Status.OK);
+                result.setKeepCallback(true);
+                return result;
 
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    result.setKeepCallback(true);
-                    return result;
-
-                } catch (RemoteException e) {
-                    LOG.e(TAG, "'stopMonitoringForRegion' service error: " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                } catch (Exception e) {
-                    LOG.e(TAG, "'stopMonitoringForRegion' exception " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
-
+            } catch (Exception e) {
+                LOG.e(TAG, "'stopMonitoringForRegion' exception " + e.getCause());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
+
         });
 
     }
 
     private void startRangingBeaconsInRegion(final JSONObject arguments, final CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
 
-            @Override
-            public PluginResult run() {
+            try {
+                Region region = parseRegion(arguments);
+                iBeaconManager.startRangingBeacons(region);
 
-                try {
-                    Region region = parseRegion(arguments);
-                    iBeaconManager.startRangingBeaconsInRegion(region);
+                PluginResult result = new PluginResult(PluginResult.Status.OK);
+                result.setKeepCallback(true);
+                return result;
 
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    result.setKeepCallback(true);
-                    return result;
-
-                } catch (RemoteException e) {
-                    LOG.e(TAG, "'startRangingBeaconsInRegion' service error: " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                } catch (Exception e) {
-                    LOG.e(TAG, "'startRangingBeaconsInRegion' exception " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
+            } catch (Exception e) {
+                LOG.e(TAG, "'startRangingBeaconsInRegion' exception " + e.getCause());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
     }
 
     private void stopRangingBeaconsInRegion(final JSONObject arguments, CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
 
-            @Override
-            public PluginResult run() {
+            try {
+                Region region = parseRegion(arguments);
+                iBeaconManager.stopRangingBeacons(region);
 
-                try {
-                    Region region = parseRegion(arguments);
-                    iBeaconManager.stopRangingBeaconsInRegion(region);
-
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    result.setKeepCallback(true);
-                    return result;
-
-                } catch (RemoteException e) {
-                    LOG.e(TAG, "'stopRangingBeaconsInRegion' service error: " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                } catch (Exception e) {
-                    LOG.e(TAG, "'stopRangingBeaconsInRegion' exception " + e.getCause());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
+                PluginResult result = new PluginResult(PluginResult.Status.OK);
+                result.setKeepCallback(true);
+                return result;
+            } catch (Exception e) {
+                LOG.e(TAG, "'stopRangingBeaconsInRegion' exception " + e.getCause());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
 
@@ -856,77 +756,57 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
 
     private void getAuthorizationStatus(CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
 
-            @Override
-            public PluginResult run() {
+            try {
 
-                try {
-
-                    //Check app has the necessary permissions
-                    if (!hasBlueToothPermission()) {
-                        return new PluginResult(PluginResult.Status.ERROR, "Application does not BLUETOOTH or BLUETOOTH_ADMIN permissions");
-                    }
-
-                    //Check the Bluetooth service is running
-                    String authStatus = iBeaconManager.checkAvailability()
-                            ? "AuthorizationStatusAuthorized" : "AuthorizationStatusDenied";
-                    JSONObject result = new JSONObject();
-                    result.put("authorizationStatus", authStatus);
-                    return new PluginResult(PluginResult.Status.OK, result);
-
-                } catch (BleNotAvailableException e) {
-                    //if device does not support iBeacons and error is thrown
-                    debugLog("'getAuthorizationStatus' Device not supported: " + e.getMessage());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                } catch (Exception e) {
-                    debugWarn("'getAuthorizationStatus' exception " + e.getMessage());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                //Check app has the necessary permissions
+                if (!hasBlueToothPermission()) {
+                    return new PluginResult(PluginResult.Status.ERROR, "Application does not BLUETOOTH or BLUETOOTH_ADMIN permissions");
                 }
 
+                //Check the Bluetooth service is running
+                String authStatus = iBeaconManager.checkAvailability()
+                        ? "AuthorizationStatusAuthorized" : "AuthorizationStatusDenied";
+                JSONObject result = new JSONObject();
+                result.put("authorizationStatus", authStatus);
+                return new PluginResult(PluginResult.Status.OK, result);
+
+            } catch (BleNotAvailableException e) {
+                //if device does not support iBeacons and error is thrown
+                debugLog("'getAuthorizationStatus' Device not supported: " + e.getMessage());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+            } catch (Exception e) {
+                debugWarn("'getAuthorizationStatus' exception " + e.getMessage());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
+
         });
     }
 
     private void requestWhenInUseAuthorization(CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                return new PluginResult(PluginResult.Status.OK);
-            }
-        });
+        _handleCallSafely(callbackContext, () -> new PluginResult(PluginResult.Status.OK));
     }
 
     private void requestAlwaysAuthorization(CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                return new PluginResult(PluginResult.Status.OK);
-            }
-        });
+        _handleCallSafely(callbackContext, () -> new PluginResult(PluginResult.Status.OK));
     }
 
 
     private void getMonitoredRegions(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                try {
-                    Collection<Region> regions = iBeaconManager.getMonitoredRegions();
-                    JSONArray regionArray = new JSONArray();
-                    for (Region region : regions) {
-                        regionArray.put(mapOfRegion(region));
-                    }
-
-                    return new PluginResult(PluginResult.Status.OK, regionArray);
-                } catch (JSONException e) {
-                    debugWarn("'getMonitoredRegions' exception: " + e.getMessage());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+        _handleCallSafely(callbackContext, () -> {
+            try {
+                Collection<Region> regions = iBeaconManager.getMonitoredRegions();
+                JSONArray regionArray = new JSONArray();
+                for (Region region : regions) {
+                    regionArray.put(mapOfRegion(region));
                 }
+
+                return new PluginResult(PluginResult.Status.OK, regionArray);
+            } catch (JSONException e) {
+                debugWarn("'getMonitoredRegions' exception: " + e.getMessage());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
 
@@ -934,22 +814,18 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void getRangedRegions(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-
-            @Override
-            public PluginResult run() {
-                try {
-                    Collection<Region> regions = iBeaconManager.getRangedRegions();
-                    JSONArray regionArray = new JSONArray();
-                    for (Region region : regions) {
-                        regionArray.put(mapOfRegion(region));
-                    }
-
-                    return new PluginResult(PluginResult.Status.OK, regionArray);
-                } catch (JSONException e) {
-                    debugWarn("'getRangedRegions' exception: " + e.getMessage());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+        _handleCallSafely(callbackContext, () -> {
+            try {
+                Collection<Region> regions = iBeaconManager.getRangedRegions();
+                JSONArray regionArray = new JSONArray();
+                for (Region region : regions) {
+                    regionArray.put(mapOfRegion(region));
                 }
+
+                return new PluginResult(PluginResult.Status.OK, regionArray);
+            } catch (JSONException e) {
+                debugWarn("'getRangedRegions' exception: " + e.getMessage());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
     }
@@ -958,60 +834,49 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     //This might not even be needed for Android as it should happen no matter what
     private void requestStateForRegion(final JSONObject arguments, CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-            @Override
-            public PluginResult run() {
+        _handleCallSafely(callbackContext, () -> {
 
-                //not supported on Android
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, "Manual request for monitoring update is not supported on Android");
-                result.setKeepCallback(true);
-                return result;
+            //not supported on Android
+            PluginResult result = new PluginResult(PluginResult.Status.ERROR, "Manual request for monitoring update is not supported on Android");
+            result.setKeepCallback(true);
+            return result;
 
-            }
         });
     }
 
     private void isRangingAvailable(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
+            try {
 
-            @Override
-            public PluginResult run() {
-                try {
+                //Check the Bluetooth service is running
+                boolean available = iBeaconManager.checkAvailability();
+                return new PluginResult(PluginResult.Status.OK, available);
 
-                    //Check the Bluetooth service is running
-                    boolean available = iBeaconManager.checkAvailability();
-                    return new PluginResult(PluginResult.Status.OK, available);
-
-                } catch (BleNotAvailableException e) {
-                    //if device does not support iBeacons and error is thrown
-                    debugLog("'isRangingAvailable' Device not supported: " + e.getMessage());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                } catch (Exception e) {
-                    debugWarn("'isRangingAvailable' exception " + e.getMessage());
-                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                }
+            } catch (BleNotAvailableException e) {
+                //if device does not support iBeacons and error is thrown
+                debugLog("'isRangingAvailable' Device not supported: " + e.getMessage());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+            } catch (Exception e) {
+                debugWarn("'isRangingAvailable' exception " + e.getMessage());
+                return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
             }
         });
     }
 
     private void registerDelegateCallbackId(JSONObject arguments, final CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
+            debugLog("Registering delegate callback ID: " + callbackContext.getCallbackId());
+            //delegateCallbackId = callbackContext.getCallbackId();
 
-            @Override
-            public PluginResult run() {
-                debugLog("Registering delegate callback ID: " + callbackContext.getCallbackId());
-                //delegateCallbackId = callbackContext.getCallbackId();
+            createMonitorCallbacks(callbackContext);
+            createRangingCallbacks(callbackContext);
+            createManagerCallbacks(callbackContext);
 
-                createMonitorCallbacks(callbackContext);
-                createRangingCallbacks(callbackContext);
-                createManagerCallbacks(callbackContext);
-
-                PluginResult result = new PluginResult(PluginResult.Status.OK);
-                result.setKeepCallback(true);
-                return result;
-            }
+            PluginResult result = new PluginResult(PluginResult.Status.OK);
+            result.setKeepCallback(true);
+            return result;
         });
 
     }
@@ -1020,62 +885,43 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      * Checks if the region is supported, both for type and content
      */
     private void isMonitoringAvailableForClass(final JSONObject arguments, final CallbackContext callbackContext) {
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+        _handleCallSafely(callbackContext, () -> {
 
-            @Override
-            public PluginResult run() {
-
-                boolean isValid = true;
-                try {
-                    parseRegion(arguments);
-                } catch (Exception e) {
-                    //will fail is the region is circular or some expected structure is missing
-                    isValid = false;
-                }
-
-                PluginResult result = new PluginResult(PluginResult.Status.OK, isValid);
-                result.setKeepCallback(true);
-                return result;
-
+            boolean isValid = true;
+            try {
+                parseRegion(arguments);
+            } catch (Exception e) {
+                //will fail is the region is circular or some expected structure is missing
+                isValid = false;
             }
+
+            PluginResult result = new PluginResult(PluginResult.Status.OK, isValid);
+            result.setKeepCallback(true);
+            return result;
+
         });
     }
 
     private void isAdvertisingAvailable(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-            @Override
-            public PluginResult run() {
-
-                //not supported at Android yet (see Android L)
-                if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    // only for ANDROID >= 5.0
-                    PluginResult result = new PluginResult(PluginResult.Status.OK, true);
-                    result.setKeepCallback(true);
-                    return result;
-                }else{
-                    PluginResult result = new PluginResult(PluginResult.Status.OK, false);
-                    result.setKeepCallback(true);
-                    return result;
-                }
-
-            }
+        _handleCallSafely(callbackContext, () -> {
+            // only for ANDROID >= 5.0
+            PluginResult result = new PluginResult(PluginResult.Status.OK, true);
+            result.setKeepCallback(true);
+            return result;
         });
 
     }
 
     private void isAdvertising(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-            @Override
-            public PluginResult run() {
+        _handleCallSafely(callbackContext, () -> {
 
-                //not supported on Android
-                PluginResult result = new PluginResult(PluginResult.Status.OK, false);
-                result.setKeepCallback(true);
-                return result;
+            //not supported on Android
+            PluginResult result = new PluginResult(PluginResult.Status.OK, false);
+            result.setKeepCallback(true);
+            return result;
 
-            }
         });
 
     }
@@ -1093,74 +939,68 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         if (major == null && minor != null)
             throw new UnsupportedOperationException("Unsupported combination of 'major' and 'minor' parameters.");
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-            @Override
-            public PluginResult run() {
-                debugLog("Advertisement start STEP Beacon.Builder ");
+        _handleCallSafely(callbackContext, () -> {
+            debugLog("Advertisement start STEP Beacon.Builder ");
 
-                Beacon beacon = new Beacon.Builder()
-                        .setId1(uuid) // UUID for beacon
-                        .setId2(major) // Major for beacon
-                        .setId3(minor) // Minor for beacon
-                        .setManufacturer(0x004C) // Radius Networks.0x0118  Change this for other beacon layouts//0x004C for iPhone
-                        .setTxPower(-56) // Power in dB
-                        .setDataFields(Arrays.asList(new Long[] {0l})) // Remove this for beacon layouts without d: fields
-                        .build();
-                debugLog("[DEBUG] Beacon.Builder: "+beacon);
-                /*
-                Beacon beacon = new Beacon.Builder()
-                        .setId1("00000000-2016-0000-0000-000000000000") // UUID for beacon
-                        .setId2("5") // Major for beacon
-                        .setId3("2000") // Minor for beacon
-                        .setManufacturer(0x004C) // Radius Networks.0x0118  Change this for other beacon layouts//0x004C for iPhone
-                        .setTxPower(-56) // Power in dB
-                        .setDataFields(Arrays.asList(new Long[] {0l})) // Remove this for beacon layouts without d: fields
-                        .build();
-                */
-                debugLog("Advertisement start STEP BeaconParser ");
+            Beacon beacon = new Beacon.Builder()
+                    .setId1(uuid) // UUID for beacon
+                    .setId2(major) // Major for beacon
+                    .setId3(minor) // Minor for beacon
+                    .setManufacturer(0x004C) // Radius Networks.0x0118  Change this for other beacon layouts//0x004C for iPhone
+                    .setTxPower(-56) // Power in dB
+                    .setDataFields(Collections.singletonList(0L)) // Remove this for beacon layouts without d: fields
+                    .build();
+            debugLog("[DEBUG] Beacon.Builder: "+beacon);
+            /*
+            Beacon beacon = new Beacon.Builder()
+                    .setId1("00000000-2016-0000-0000-000000000000") // UUID for beacon
+                    .setId2("5") // Major for beacon
+                    .setId3("2000") // Minor for beacon
+                    .setManufacturer(0x004C) // Radius Networks.0x0118  Change this for other beacon layouts//0x004C for iPhone
+                    .setTxPower(-56) // Power in dB
+                    .setDataFields(Arrays.asList(new Long[] {0l})) // Remove this for beacon layouts without d: fields
+                    .build();
+            */
+            debugLog("Advertisement start STEP BeaconParser ");
 
-                debugLog("Advertisement start STEP BeaconTransmitter ");
-                final BeaconTransmitter beaconTransmitter = LocationManager.this.createOrGetBeaconTransmitter();
+            debugLog("Advertisement start STEP BeaconTransmitter ");
+            final BeaconTransmitter beaconTransmitter = LocationManager.this.createOrGetBeaconTransmitter();
 
-                debugLog("[DEBUG] BeaconTransmitter: "+beaconTransmitter);
-                beaconTransmitter.startAdvertising(beacon, new AdvertiseCallback() {
+            debugLog("[DEBUG] BeaconTransmitter: "+beaconTransmitter);
+            beaconTransmitter.startAdvertising(beacon, new AdvertiseCallback() {
 
-                    @Override
-                    public void onStartFailure(int errorCode) {
-                        debugWarn("Advertisement start failed with code: "+errorCode);
-                    }
+                @Override
+                public void onStartFailure(int errorCode) {
+                    debugWarn("Advertisement start failed with code: "+errorCode);
+                }
 
-                    @Override
-                    public void onStartSuccess(AdvertiseSettings settingsInEffect) {
-                        debugWarn("startAdvertising start succeeded.");
-                    }
-                });
+                @Override
+                public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+                    debugWarn("startAdvertising start succeeded.");
+                }
+            });
 
-                final PluginResult result = new PluginResult(PluginResult.Status.OK, false);
-                result.setKeepCallback(true);
-                return result;
-            }
+            final PluginResult result = new PluginResult(PluginResult.Status.OK, false);
+            result.setKeepCallback(true);
+            return result;
         });
 
     }
 
     private void stopAdvertising(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
-            @Override
-            public PluginResult run() {
+        _handleCallSafely(callbackContext, () -> {
 
-                debugInfo("LocationManager::stopAdvertising::STOPPING...");
-                final BeaconTransmitter beaconTransmitter = LocationManager.this.createOrGetBeaconTransmitter();
-                beaconTransmitter.stopAdvertising();
-                debugInfo("LocationManager::stopAdvertising::DONE");
+            debugInfo("LocationManager::stopAdvertising::STOPPING...");
+            final BeaconTransmitter beaconTransmitter = LocationManager.this.createOrGetBeaconTransmitter();
+            beaconTransmitter.stopAdvertising();
+            debugInfo("LocationManager::stopAdvertising::DONE");
 
-                //not supported on Android
-                PluginResult result = new PluginResult(PluginResult.Status.OK, "iBeacon Advertising stopped.");
-                result.setKeepCallback(true);
-                return result;
+            //not supported on Android
+            PluginResult result = new PluginResult(PluginResult.Status.OK, "iBeacon Advertising stopped.");
+            result.setKeepCallback(true);
+            return result;
 
-            }
         });
     }
 
@@ -1347,20 +1187,13 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void _handleCallSafely(final CallbackContext callbackContext, final ILocationManagerCommand task, boolean runInBackground) {
         if (runInBackground) {
-            new AsyncTask<Void, Void, Void>() {
-
-                @Override
-                protected Void doInBackground(final Void... params) {
-
-                    try {
-                        _sendResultOfCommand(callbackContext, task.run());
-                    } catch (Exception ex) {
-                        _handleExceptionOfCommand(callbackContext, ex);
-                    }
-                    return null;
+            cordova.getThreadPool().execute(() -> {
+                try {
+                    _sendResultOfCommand(callbackContext, task.run());
+                } catch (Exception ex) {
+                    _handleExceptionOfCommand(callbackContext, ex);
                 }
-
-            }.execute();
+            });
         } else {
             try {
                 _sendResultOfCommand(callbackContext, task.run());
@@ -1416,29 +1249,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         }
     }
 
-    //////// IBeaconConsumer implementation /////////////////////
-
-    @Override
-    public void onBeaconServiceConnect() {
-        debugLog("Connected to IBeacon service");
-    }
-
-    @Override
-    public Context getApplicationContext() {
-        return cordova.getActivity();
-    }
-
-    @Override
-    public void unbindService(ServiceConnection connection) {
-        debugLog("Unbind from IBeacon service");
-        cordova.getActivity().unbindService(connection);
-    }
-
-    @Override
-    public boolean bindService(Intent intent, ServiceConnection connection, int mode) {
-        debugLog("Bind to IBeacon service");
-        return cordova.getActivity().bindService(intent, connection, mode);
-    }
 
     @Override
     public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
@@ -1494,6 +1304,12 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private String[] getRequiredPermissions(){
         List<String> permissions = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= 31) {
+            if(!PermissionHelper.hasPermission(this, Manifest.permission.BLUETOOTH_CONNECT))
+                permissions.add(Manifest.permission.BLUETOOTH_CONNECT);
+            if(!PermissionHelper.hasPermission(this, Manifest.permission.BLUETOOTH_SCAN))
+                permissions.add(Manifest.permission.BLUETOOTH_SCAN);
+        }
         if(Build.VERSION.SDK_INT >= 29) {
             if(!PermissionHelper.hasPermission(this, Manifest.permission.ACCESS_FINE_LOCATION))
                 permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
